@@ -985,7 +985,7 @@ async function captureExportArea() {
     const missingMode = isHeight ? 'weight' : 'height';
 
     // 修改原圖目標題，使其明確標示身高或體重
-    const chartCard = document.getElementById('growthChart').closest('.bg-white.rounded-2xl');
+    const chartCard = document.getElementById('chartBox');
     let origTitleHTML = "";
     let origTitleElement = null;
     let tempContainer = null;
@@ -1077,25 +1077,29 @@ async function exportToPDF() {
     document.getElementById('btnExportPDF').innerHTML = '產生中...';
     try {
         const canvas = await captureExportArea();
-        const imgWidth = 210; // A4 width in mm
-        const pageHeight = 297; // A4 height in mm
-        let imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-        let finalWidth = imgWidth;
-        let finalHeight = imgHeight;
-
-        // 若高度超過 A4 一頁 (保留邊距)，等比例縮小寬度與高度
-        if (imgHeight > pageHeight - 20) {
-            finalHeight = pageHeight - 20;
-            finalWidth = (canvas.width * finalHeight) / canvas.height;
-        }
-
         const imgData = canvas.toDataURL('image/png');
+
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('p', 'mm', 'a4');
 
-        const xOffset = (210 - finalWidth) / 2; // 置中
-        doc.addImage(imgData, 'PNG', xOffset, 10, finalWidth, finalHeight);
+        const pageHeight = 297; // A4 height in mm
+        const xOffset = 10;     // 左右各留 10mm 邊界
+        const imgWidth = 210 - (xOffset * 2); // 實際圖片寬度為 190mm
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        let heightLeft = imgHeight;
+        let position = 10; // 頂端預留 10mm 留白
+
+        doc.addImage(imgData, 'PNG', xOffset, position, imgWidth, imgHeight);
+        heightLeft -= (pageHeight - position); // 扣除第一頁的可用高度
+
+        // 若圖片過長，自動新增分頁
+        while (heightLeft > 0) {
+            position = heightLeft - imgHeight; // 計算新頁面中的 Y 軸負偏移量
+            doc.addPage();
+            doc.addImage(imgData, 'PNG', xOffset, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+        }
 
         doc.save(`兒童生長曲線評估_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (err) {
