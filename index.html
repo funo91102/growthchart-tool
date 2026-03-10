@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>兒童生長曲線智慧評估系統</title>
+    <!-- 引入 Tailwind CSS (CDN 方便展示) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 引入 HTML2Canvas 與 jsPDF 用於匯出功能 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- 引入 QRious 生成 QR Code -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+
+    <!-- 定義全域自訂 Tailwind 元件 -->
+    <style type="text/tailwindcss">
+        @layer components {
+            .card-base {
+                @apply bg-white rounded-2xl shadow-xl border border-slate-100 p-6;
+            }
+            .card-metric {
+                @apply bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm;
+            }
+            .form-input {
+                @apply w-full rounded-xl border-slate-300 border px-4 py-3 sm:py-2.5 bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-medical-500 transition-colors shadow-sm;
+            }
+            .btn-primary {
+                @apply bg-medical-500 hover:bg-medical-600 text-white font-bold rounded-xl shadow-md transition-all duration-200;
+            }
+        }
+    </style>
+
+    <!-- 設定 Tailwind 主題與自定義色彩 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        medical: {
+                            50: '#f0fdfa',
+                            100: '#ccfbf1',
+                            500: '#14b8a6', // 溫和明亮的兒科青色
+                            600: '#0d9488',
+                            900: '#134e4a',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['"Noto Sans TC"', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #f8fafc;
+        }
+
+        /* 隱藏捲軸但允許捲動 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+
+<body class="text-slate-800 antialiased min-h-screen py-8">
+
+    <div id="mainContainer" class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 transition-all duration-300">
+
+        <header class="mb-8 text-center" id="mainHeader">
+            <h1 class="text-3xl font-extrabold text-medical-900 drop-shadow-sm" id="mainTitle">👶 兒童生長曲線評估系統</h1>
+            <p class="mt-2 text-md text-slate-500" id="mainSubtitle">基於台灣國健署標準，自動推算精確落點與曲線追蹤</p>
+        </header>
+
+        <div class="flex flex-col lg:flex-row gap-8 items-start w-full">
+
+            <!-- 左側：輸入表單 -->
+            <div class="w-full lg:w-1/3 flex-shrink-0 card-base self-start lg:sticky lg:top-8">
+                <h2 class="text-lg font-bold text-slate-700 mb-5 pb-2 border-b border-slate-100 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-medical-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01">
+                        </path>
+                    </svg>
+                    量測資料登錄
+                </h2>
+
+                <form id="calcForm" class="space-y-6">
+                    <!-- 預設值帶入 1.5個月 / 58cm 供展示 -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">孩童性別</label>
+                        <select id="gender" class="form-input">
+                            <option value="male" selected>男童 (Boy)</option>
+                            <option value="female">女童 (Girl)</option>
+                        </select>
+                    </div>
+
+                    <!-- 日期輸入改為堆疊，增加間距 -->
+                    <div class="space-y-5">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">出生日期 (支援手動輸入: 1090319 或
+                                20200319)</label>
+                            <input type="text" id="birthDate" required placeholder="例如: 1090319 或 2020-03-19"
+                                class="form-input">
+                            <p id="parsedBirthDateHint" class="text-xs text-medical-600 mt-1 hidden"></p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">測量日期</label>
+                            <input type="date" id="recordDate" required class="form-input">
+                        </div>
+                    </div>
+
+                    <div class="mt-2 pl-1">
+                        <label class="flex items-center space-x-3 text-sm font-medium text-slate-700 cursor-pointer">
+                            <input type="checkbox" id="isPremature"
+                                class="rounded text-medical-500 focus:ring-medical-500 h-5 w-5">
+                            <span>是否為早產兒？(小於 37 週出生)</span>
+                        </label>
+                    </div>
+
+                    <div id="prematureBox"
+                        class="hidden bg-orange-50 p-4 rounded-xl border border-orange-100 shadow-sm">
+                        <div>
+                            <label class="block text-xs font-medium text-orange-800 mb-1.5">出生週數</label>
+                            <div class="relative">
+                                <input type="text" id="gestationalAgeInput" placeholder="例如: 34+5 或 35"
+                                    class="w-full rounded-lg border-orange-200 border px-4 py-2 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-400 text-sm shadow-sm">
+                                <span class="absolute right-4 top-2 text-slate-400 text-sm">週</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">測量身高 (cm)</label>
+                            <div class="relative">
+                                <input type="number" id="height" step="0.1" value="58" required class="form-input">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1.5">測量體重 (kg)</label>
+                            <div class="relative">
+                                <input type="number" id="weight" step="0.01" value="5.2" required class="form-input">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1.5">頭圍 (選填, cm)</label>
+                        <div class="relative">
+                            <input type="number" id="headCirc" step="0.1" placeholder="例如: 40" class="form-input">
+                        </div>
+                    </div>
+
+                    <button type="submit"
+                        class="w-full mt-8 btn-primary py-4 sm:py-3 px-4 transform hover:-translate-y-0.5 text-lg">
+                        分析生長落點
+                    </button>
+                </form>
+            </div>
+
+            <!-- 右側：結果與圖表 -->
+            <div id="exportContainer" class="w-full lg:w-2/3 flex-shrink-0 flex flex-col space-y-6">
+
+                <!-- 診間模式內部包裹器 -->
+                <div id="resultsWrapper" class="flex flex-col space-y-6 w-full">
+
+                    <!-- 結果卡片區塊 -->
+                    <div id="resultCard" class="card-base hidden relative w-full sm:p-8">
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-5">
+                            <div class="flex items-center space-x-4">
+                                <h3 class="text-2xl font-black text-slate-800">評估結果</h3>
+                                <div id="genderBadge"
+                                    class="px-3.5 py-1.5 rounded-full bg-blue-100 flex items-center justify-center shadow-inner">
+                                    <span id="genderBadgeText" class="text-sm font-bold text-blue-800 tracking-wide"
+                                        style="line-height: normal;">男童</span>
+                                </div>
+                            </div>
+                            <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 w-full sm:w-auto mt-2 sm:mt-0"
+                                data-html2canvas-ignore="true">
+                                <!-- 匯出報告按鈕 (不儲存) -->
+                                <button id="btnExportPDF"
+                                    class="flex-1 sm:flex-none justify-center hidden text-sm bg-white border-2 border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 sm:py-1.5 rounded-xl shadow-sm font-bold transition-all flex items-center">
+                                    <svg class="w-4 h-4 mr-1.5 leading-none text-slate-500" fill="none"
+                                        stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                        </path>
+                                    </svg>
+                                    匯出專業報告 (不留紀錄)
+                                </button>
+                                <!-- 儲存紀錄按鈕 -->
+                                <button id="btnSaveData"
+                                    class="flex-1 sm:flex-none justify-center hidden text-sm btn-primary px-4 py-2 sm:py-1.5 flex items-center">
+                                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                        xmlns="http://www.w3.org/2000/svg">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4">
+                                        </path>
+                                    </svg>
+                                    儲存並追蹤趨勢 (存入本地)
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 上方：年齡與出生日期 -->
+                        <div class="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="card-metric p-4 sm:p-5">
+                                <p class="text-xs font-medium text-slate-500 mb-1.5 uppercase tracking-wider">校正後年齡</p>
+                                <p class="text-3xl font-black text-medical-600 leading-none"><span
+                                        id="resAge">1.5</span>
+                                    <span class="text-lg font-medium text-slate-600 ml-1">個月</span>
+                                </p>
+                            </div>
+                            <div class="card-metric p-4 sm:p-5">
+                                <p class="text-xs font-medium text-slate-500 mb-1.5 uppercase tracking-wider">出生年月日</p>
+                                <p class="text-2xl font-bold text-slate-700 leading-none mt-1" id="resBirthDate">
+                                    --/--/--
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- 下方：2x2 (或3x2) 的矩陣版面，確保高度一致且佈局平衡 -->
+                        <div id="metricsGrid" class="grid grid-cols-2 gap-4 sm:gap-5 mb-6">
+                            <div class="card-metric flex flex-col justify-center cursor-pointer hover:border-medical-400 hover:shadow-md transition-all h-full"
+                                id="btnShowHeightChart">
+                                <p class="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wider">身高百分位</p>
+                                <p id="resHeightPct" class="text-lg sm:text-xl font-bold text-slate-800 leading-tight">
+                                    >= 97th</p>
+                                <p class="text-sm font-medium text-slate-400 mt-2"><span id="resHeightVal"
+                                        class="text-base text-slate-600">58.0</span> cm</p>
+                            </div>
+
+                            <div class="card-metric flex flex-col justify-center cursor-pointer hover:border-medical-400 hover:shadow-md transition-all h-full"
+                                id="btnShowWeightChart">
+                                <p class="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wider">體重百分位</p>
+                                <p id="resWeightPct" class="text-lg sm:text-xl font-bold text-slate-800 leading-tight">
+                                    50th - 85th</p>
+                                <p class="text-sm font-medium text-slate-400 mt-2"><span id="resWeightVal"
+                                        class="text-base text-slate-600">5.2</span> kg</p>
+                            </div>
+
+                            <!-- 頭圍百分位卡片 -->
+                            <div class="card-metric flex flex-col justify-center h-full hidden" id="hcCard">
+                                <p class="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wider">頭圍百分位</p>
+                                <p id="resHeadCircPct"
+                                    class="text-lg sm:text-xl font-bold text-slate-800 leading-tight">--</p>
+                                <p class="text-sm font-medium text-slate-400 mt-2"><span id="resHeadCircVal"
+                                        class="text-base text-slate-600">--</span> cm</p>
+                            </div>
+
+                            <!-- BMI卡片 -->
+                            <div class="card-metric flex flex-col justify-center h-full hidden" id="bmiCard">
+                                <p class="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wider">BMI 狀態</p>
+                                <p id="resBmiPct" class="text-lg sm:text-xl font-bold text-slate-800 leading-tight">--
+                                </p>
+                                <p class="text-sm font-medium text-slate-400 mt-2"><span id="resBmiVal"
+                                        class="text-base text-slate-600">--</span></p>
+                            </div>
+                        </div>
+
+                        <!-- 醫師溫馨提醒區塊 (預設隱藏，極端值時顯示) -->
+                        <div id="warningBox"
+                            class="hidden mt-4 bg-orange-50 border-l-4 border-orange-500 p-4 rounded-r-lg">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-orange-400" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd"
+                                            d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                                            clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm text-orange-700 font-medium">
+                                        醫師溫馨提醒：<br>該數值偏離一般群體中央值（落在 <span
+                                            id="warningMsgVar"></span>）。建議與您的兒科醫師討論寶寶近期的飲食與生長狀況。
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 發展小提醒區塊 -->
+                        <div id="milestoneBox"
+                            class="hidden mt-6 bg-teal-50 border border-teal-100 rounded-xl p-5 shadow-sm w-full">
+                            <h4 class="text-lg font-bold text-teal-800 mb-3 flex items-center">
+                                <svg class="w-5 h-5 mr-2 text-teal-600" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                </svg>
+                                <span id="milestoneTitleText">發展小提醒</span>
+                            </h4>
+
+                            <div class="text-sm text-slate-700 space-y-4">
+                                <!-- 應達成項目 -->
+                                <div>
+                                    <p class="font-medium text-slate-800 mb-2">🎈 這個年紀的孩子應該逐漸能：</p>
+                                    <ul id="milestoneExpectedList" class="list-none leading-relaxed text-slate-600">
+                                        <!-- JS 動態插入 -->
+                                    </ul>
+                                </div>
+
+                                <!-- 需特別留意項目 (警示) -->
+                                <div id="milestoneWarningSection"
+                                    class="hidden mt-4 pt-3 border border-orange-200 bg-orange-50 rounded-lg p-3 shadow-inner">
+                                    <p class="font-bold text-orange-700 mb-2 flex items-center">
+                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                            xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                                            </path>
+                                        </svg>
+                                        若前一區間的以下動作仍未達成，請特別留意：
+                                    </p>
+                                    <ul id="milestoneWarningList"
+                                        class="list-disc leading-relaxed text-orange-800 font-bold mt-1 pl-5">
+                                        <!-- JS 動態插入 -->
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <!-- 專業預約發展評估區塊 -->
+                            <div
+                                class="mt-5 bg-white border border-teal-200 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between shadow-sm">
+                                <div class="flex-1 pr-0 sm:pr-4 mb-4 sm:mb-0">
+                                    <h5 class="text-md font-bold text-teal-900 mb-1 flex items-center">
+                                        <svg class="w-4 h-4 mr-1 text-teal-600" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z">
+                                            </path>
+                                        </svg>
+                                        專業發展評估預約
+                                    </h5>
+                                    <p class="text-sm text-slate-600 leading-relaxed">
+                                        若您對孩子的發展有任何疑慮，或上述項目出現多項警訊，建議預約回診進行詳細篩檢。
+                                    </p>
+                                    <a href="https://calendar.google.com/calendar/u/0/appointments/schedules/AcZssZ0BliUPobtHkYaU5ynk4Qml2s1h_wcDUHLP5c4iWa1mDiunH2phcGckM1Re5RGMxX8nxNs9RxEA"
+                                        target="_blank" data-html2canvas-ignore="true"
+                                        class="inline-block mt-3 bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold py-2 px-4 rounded-lg transition-colors shadow-sm">
+                                        預約發展評估
+                                    </a>
+                                </div>
+                                <div
+                                    class="flex flex-col items-center flex-shrink-0 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                    <canvas id="qrCodeCanvas"></canvas>
+                                    <p class="text-[10px] text-slate-500 mt-1 font-medium text-center">請掃描上方 QR
+                                        Code<br>預約回診</p>
+                                </div>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    <!-- 圖表區塊 -->
+                    <div id="chartBox" class="card-base w-full hidden">
+                        <h3
+                            class="text-lg font-bold text-slate-700 mb-4 pb-2 border-b border-slate-100 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-medical-500" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z">
+                                </path>
+                            </svg>
+                            近期生長曲線圖 (<span id="chartAgeRangeLabel">0~2 歲</span>)
+                        </h3>
+                        <div class="relative h-80 w-full">
+                            <canvas id="growthChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="mt-12 mb-4 text-center text-sm text-slate-400">
+        <p>本系統由 <strong>傅炯皓醫師</strong> 製作，參考來源：台灣衛生福利部國民健康署兒童生長曲線標準。</p>
+    </footer>
+    </div>
+
+    <!-- 載入數據與邏輯腳本 -->
+    <script src="growthData.js"></script>
+    <script src="milestonesData.js"></script>
+    <script src="app.js"></script>
+
+</body>
+
+</html>
