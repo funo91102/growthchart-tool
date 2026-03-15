@@ -184,6 +184,15 @@
                                     <span id="genderBadgeText" class="text-sm font-bold text-blue-800 tracking-wide"
                                         style="line-height: normal;">男童</span>
                                 </div>
+                                <!-- 複製按鈕 -->
+                                <div id="copy-record-container" class="hidden items-center ml-2">
+                                    <button id="copy-medical-record"
+                                        class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 text-sm rounded-lg font-bold flex items-center transition-colors shadow-sm relative">
+                                        <span class="mr-1">📋</span> 複製生長數據
+                                        <span id="copy-feedback"
+                                            class="absolute -top-8 left-1/2 transform -translate-x-1/2 text-xs text-medical-600 font-bold opacity-0 transition-opacity duration-300 bg-white px-2 py-1 rounded shadow-sm border border-slate-100 pointer-events-none whitespace-nowrap">已複製！</span>
+                                    </button>
+                                </div>
                             </div>
                             <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3 w-full sm:w-auto mt-2 sm:mt-0"
                                 data-html2canvas-ignore="true">
@@ -351,10 +360,10 @@
                                     </a>
                                 </div>
                                 <div
-                                    class="flex flex-col items-center flex-shrink-0 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                    <canvas id="qrCodeCanvas"></canvas>
-                                    <p class="text-[10px] text-slate-500 mt-1 font-medium text-center">請掃描上方 QR
-                                        Code<br>預約回診</p>
+                                    class="flex flex-col items-center flex-shrink-0 bg-slate-50 p-2 rounded-lg border border-slate-100 w-32">
+                                    <canvas id="qrCodeCanvas" class="w-full"></canvas>
+                                    <p class="text-[10px] text-slate-500 mt-2 font-medium text-center leading-relaxed">
+                                        請掃描上方 QR code<br>或搜尋 <strong>@844uwipx</strong><br>(官方 LINE)<br>預約回診</p>
                                 </div>
                             </div>
 

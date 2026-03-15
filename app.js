@@ -28,6 +28,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 mainContainer.classList.remove('max-w-4xl');
                 mainContainer.classList.add('max-w-[1400px]'); // Support 1080p wide layout
             }
+
+            // 顯示複製按鈕
+            const copyContainer = document.getElementById('copy-record-container');
+            if (copyContainer) {
+                copyContainer.classList.remove('hidden');
+                copyContainer.classList.add('flex');
+            }
         }
 
         if (typeof window.growthDataRawJson === 'undefined') {
@@ -92,6 +99,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 綁定匯出按鈕事件 (僅保留專業報告)
         document.getElementById('btnExportPDF').addEventListener('click', exportToPDF);
+
+        // 綁定複製按鈕事件
+        const btnCopy = document.getElementById('copy-medical-record');
+        if (btnCopy) {
+            btnCopy.addEventListener('click', handleCopyRecord);
+        }
 
         // 綁定智慧日期輸入事件
         const bdInput = document.getElementById('birthDate');
@@ -355,7 +368,7 @@ function calculatePercentile(ageInMonths, gender, currentVal, type) {
         pResult = rangeResult;
     }
 
-    return { standards, pResult, isExtreme, extremeType };
+    return { standards, pResult, isExtreme, extremeType, rangeResult };
 }
 
 // 評估 BMI (依據衛福部兒少體位標準)
@@ -810,7 +823,7 @@ function updateUIResult() {
         new QRious({
             element: qrCanvas,
             value: 'https://calendar.google.com/calendar/u/0/appointments/schedules/AcZssZ0BliUPobtHkYaU5ynk4Qml2s1h_wcDUHLP5c4iWa1mDiunH2phcGckM1Re5RGMxX8nxNs9RxEA',
-            size: 96, // 約 2.5cm 在螢幕上的合理像素大小 (96px)
+            size: 112, // 配合外層 w-32 (128px) 扣除 padding 限制的合理像素大小
             level: 'H' // 高容錯，確保縮放掃描清晰
         });
     }
@@ -1108,4 +1121,89 @@ async function exportToPDF() {
     } finally {
         document.getElementById('btnExportPDF').innerHTML = origText;
     }
+}
+
+// 處理複製生長數據邏輯
+function handleCopyRecord() {
+    if (!latestCalcContext) {
+        alert("請先產生評估結果後再複製！");
+        return;
+    }
+
+    const { bDate, gender, height, weight, headCirc, resH, resW, resHC, resBMI } = latestCalcContext;
+
+    // 1. 性別符號
+    const genderSymbol = gender === 'male' ? '♂︎' : '♀︎';
+
+    // 2. 測量日期與年齡計算 (精確至天)
+    const rDateStr = document.getElementById('recordDate').value;
+    const rDate = new Date(rDateStr);
+
+    let bYear = bDate.getFullYear();
+    let bMonth = bDate.getMonth();
+    let bDay = bDate.getDate();
+
+    let rYear = rDate.getFullYear();
+    let rMonth = rDate.getMonth();
+    let rDay = rDate.getDate();
+
+    let y = rYear - bYear;
+    let m = rMonth - bMonth;
+    let d = rDay - bDay;
+
+    if (d < 0) {
+        m--;
+        const lastMonth = new Date(rYear, rMonth, 0); // 前一個月的最後一天
+        d += lastMonth.getDate();
+    }
+    if (m < 0) {
+        y--;
+        m += 12;
+    }
+
+    let ageStr = '';
+    if (y > 0) ageStr += `${y}y`;
+    if (m > 0 || y > 0) ageStr += `${m}m`;
+    ageStr += `${d}d`;
+    if (y === 0 && m === 0) ageStr = `${d}d`;
+    else if (y === 0) ageStr = `${m}m${d}d`;
+
+    // 格式化百分位顯示 (如 15th-50th%)
+    const formatPct = (res) => {
+        if (!res || !res.rangeResult) return '';
+        // 移除空格並加上 % 符號
+        return res.rangeResult.replace(/\s+/g, '') + '%';
+    };
+
+    const hPctStr = formatPct(resH);
+    const wPctStr = formatPct(resW);
+    const bmiValStr = resBMI ? resBMI.bmi.toFixed(1) : '';
+
+    // 組合結果字串: {年歲月日} {性別} 身高 {身高}cm ({身高百分位}), 體重 {體重}kg ({體重百分位}), 頭圍 {頭圍}cm, BMI {BMI}
+    // 體重與頭圍精確到小數點後 1 位 (toFixed(1))
+    let recordStr = `${ageStr} ${genderSymbol} 身高 ${height.toFixed(1)}cm (${hPctStr}), 體重 ${weight.toFixed(1)}kg (${wPctStr})`;
+
+    if (headCirc !== null && headCirc !== undefined && resHC) {
+        recordStr += `, 頭圍 ${headCirc.toFixed(1)}cm (${formatPct(resHC)})`;
+    } else if (headCirc !== null && headCirc !== undefined) {
+        recordStr += `, 頭圍 ${headCirc.toFixed(1)}cm`;
+    }
+
+    if (bmiValStr) {
+        recordStr += `, BMI ${bmiValStr}`;
+    }
+
+    // 寫入剪貼簿並顯示回饋
+    navigator.clipboard.writeText(recordStr).then(() => {
+        const feedback = document.getElementById('copy-feedback');
+        if (feedback) {
+            feedback.classList.remove('opacity-0');
+            setTimeout(() => {
+                feedback.classList.add('opacity-0');
+            }, 2000);
+        }
+    }).catch(err => {
+        console.error('複製失敗:', err);
+        alert('複製失敗，請檢查瀏覽器權限或手動複製。');
+    });
 }
